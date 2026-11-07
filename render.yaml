@@ -12,4 +12,4 @@ services:
       - key: YOUTUBE_API_KEY   # opcional
         sync: false
       - key: MAX_UPLOAD_MB
-        value: "100"
+        value: "7000"
