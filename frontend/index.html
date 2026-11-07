@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NekoTube — Transforme seus vídeos em magia</title>
+<meta name="description" content="Conversor de mídia com tema mágico. Site de fãs, sem associação oficial com a Hasbro.">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<header class="top">
+  <a class="brand" href="#inicio" aria-label="NekoTube">
+    <img src="logo.jpg" alt="Logo NekoTube" width="44" height="44">
+    <span>Neko<b>Tube</b></span>
+  </a>
+  <nav aria-label="Principal">
+    <a href="#inicio">Início</a><a href="#conversor">Conversor</a><a href="#sobre">Sobre</a><a href="#configuracoes">Configurações</a>
+  </nav>
+  <button id="themeBtn" class="icon-btn" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path class="moon" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+  </button>
+</header>
+
+<main>
+  <div id="banner" class="banner" hidden role="alert"></div>
+
+  <section id="inicio" class="hero">
+    <p class="eyebrow">✦ Site de fãs de My Little Pony ✦</p>
+    <h1>Transforme seus vídeos em <span class="grad">magia!</span></h1>
+    <p class="sub">Converta suas mídias, extraia suas músicas e tenha seus vídeos disponíveis em poucos instantes.</p>
+
+    <form id="analyzeForm" class="search" autocomplete="off">
+      <input id="url" type="url" inputmode="url" placeholder="Cole aqui o link do YouTube..." aria-label="Link do YouTube">
+      <button class="btn btn-glow" id="analyzeBtn" type="submit">ANALISAR VÍDEO</button>
+    </form>
+    <p id="urlError" class="error" role="alert" hidden></p>
+
+    <div class="or"><span>ou</span></div>
+    <label id="drop" class="drop" tabindex="0">
+      <input id="file" type="file" hidden accept=".mp4,.mkv,.webm,.mov,.avi,.mp3,.wav,.m4a,.aac,.ogg,.flac">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+      <strong>Selecione ou arraste um arquivo autorizado</strong>
+      <small id="limits">Áudio ou vídeo que seja seu ou tenha licença para conversão.</small>
+    </label>
+  </section>
+
+  <section id="conversor" class="stack">
+    <div id="mediaPanel" class="card" hidden></div>
+    <div id="uploadProgress" class="card" hidden>
+      <div class="row"><strong>Enviando arquivo…</strong><span id="upPct">0%</span></div>
+      <div class="bar"><i id="upBar"></i></div>
+    </div>
+
+    <div id="options" class="grid2" hidden>
+      <article class="card trixie" id="cardAudio">
+        <div class="char"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 46h48l-6 8H14z" fill="#3979E8"/><path d="M20 46 28 8h8l8 38z" fill="#49306B" stroke="#85C9FF" stroke-width="2"/><path d="M20 40h24v6H20z" fill="#85C9FF"/><path d="M32 17l2 4.5 5 .6-3.7 3.3 1 4.9-4.3-2.5-4.3 2.5 1-4.9-3.7-3.3 5-.6z" fill="#F8F5FF"/></svg></div>
+        <h3>Converter para áudio</h3><p class="muted">Magia de Trixie Lulamoon ✦</p>
+        <label>Formato<select id="aFormat"></select></label>
+        <label id="aQualWrap">Qualidade<select id="aQuality"></select></label>
+        <button class="btn btn-glow" id="goAudio">CONVERTER PARA ÁUDIO</button>
+        <p class="note" id="aNote"></p>
+      </article>
+      <article class="card starlight" id="cardVideo">
+        <div class="char"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4l7 17 18 2-14 12 5 18-16-10-16 10 5-18L7 23l18-2z" fill="#E8A5E8" stroke="#F8F5FF" stroke-width="2" stroke-linejoin="round"/><circle cx="32" cy="30" r="7" fill="#49306B"/></svg></div>
+        <h3>Baixar vídeo</h3><p class="muted">Magia de Starlight Glimmer ✦</p>
+        <label>Formato<select id="vFormat"><option value="mp4">MP4</option></select></label>
+        <label>Qualidade<select id="vQuality"></select></label>
+        <button class="btn btn-glow" id="goVideo">CONVERTER VÍDEO</button>
+        <p class="note" id="vNote"></p>
+      </article>
+    </div>
+
+    <div id="processing" class="card" hidden>
+      <div class="row"><strong id="pName">—</strong><span id="pPct">0%</span></div>
+      <div class="bar"><i id="pBar"></i></div>
+      <div class="row"><span class="muted" id="pStatus">Preparando a magia…</span><button class="btn btn-ghost" id="cancelBtn">Cancelar</button></div>
+    </div>
+
+    <div id="success" class="card success" hidden>
+      <h3>✦ Conversão concluída!</h3>
+      <dl id="sInfo"></dl>
+      <a id="dlBtn" class="btn btn-blue" href="#">BAIXAR ARQUIVO</a>
+      <p id="magicMsg" class="magic" hidden></p>
+    </div>
+  </section>
+
+  <section id="biblioteca" class="stack">
+    <div class="row"><h2>Minha Biblioteca</h2><button class="btn btn-ghost" id="clearAll">Limpar histórico</button></div>
+    <div id="library" class="card list"></div>
+    <p class="muted small">Os arquivos ficam disponíveis para novo download por tempo limitado e depois são apagados automaticamente do servidor.</p>
+  </section>
+
+  <section id="sobre" class="stack">
+    <h2>Sobre</h2>
+    <div class="card">
+      <p>O <b>NekoTube</b> é uma ferramenta para converter mídias que você tem o direito de usar: seus próprios vídeos, músicas autorais, conteúdos com licença livre ou arquivos que você foi autorizado a processar.</p>
+      <p>Para links do YouTube, exibimos apenas a prévia pública. <b>Não contornamos DRM, restrições de acesso ou proteções</b> de nenhuma plataforma, e respeitamos os Termos de Serviço e os direitos autorais dos criadores.</p>
+      <p class="muted small">Projeto de fãs, sem qualquer associação oficial com a Hasbro. My Little Pony e seus personagens pertencem aos respectivos detentores.</p>
+    </div>
+  </section>
+
+  <section id="configuracoes" class="stack">
+    <h2>Configurações</h2>
+    <div class="card settings">
+      <label class="switch"><input type="checkbox" id="optTheme"> <span>Tema escuro</span></label>
+      <label class="switch"><input type="checkbox" id="optMsgs"> <span>Mensagens de Trixie e Starlight</span></label>
+      <label class="switch"><input type="checkbox" id="optStars"> <span>Estrelas animadas no fundo</span></label>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">NekoTube · site de fãs · sem associação oficial com a Hasbro</footer>
+<div id="toast" class="toast" hidden></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

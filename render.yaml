@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: nekotube-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/config
+    envVars:
+      - key: FRONTEND_ORIGIN   # ex.: https://SEU-USUARIO.github.io (sem barra no final e sem /nekotube)
+        sync: false
+      - key: YOUTUBE_API_KEY   # opcional
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: "100"
