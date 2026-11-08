@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { allowedHosts, validateImportUrl, ytdlpInfo, ytdlpDownload } from './importer.js';
+import { allowedHosts, validateImportUrl, ytdlpInfo, ytdlpDownload, detectPlatform } from './importer.js';
 
 const execFileP = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -138,7 +138,9 @@ function runJob(item, up, args, duration) {
   const finish = (status, error) => {
     if (finished) return; finished = true; jobs.delete(item.id);
     if (status === 'done') {
-      const size = fs.statSync(item.file_path).size;
+      let size = 0;
+      try { size = fs.statSync(item.file_path).size; }
+      catch { rmSafe(item.file_path); db.prepare('UPDATE items SET status=?, error=?, file_path=NULL WHERE id=?').run('error', 'Arquivo de saída não encontrado.', item.id); return; }
       db.prepare('UPDATE items SET status=?, size=?, expires_at=? WHERE id=?').run('done', size, Date.now() + cfg.ttlMin * 60000, item.id);
     } else {
       rmSafe(item.file_path);
@@ -192,67 +194,36 @@ const upload = multer({
 });
 
 app.get('/api/config', (_req, res) => res.json({
-  ffmpeg: ffmpegOk, ytdlp: ytdlpOk, importHosts: cfg.importHosts, youtubeConfigured: !!cfg.ytKey, maxUploadMB: cfg.maxUploadMB,
+  ffmpeg: ffmpegOk, ytdlp: ytdlpOk, importHosts: cfg.importHosts, supportedPlatforms: ['youtube', 'instagram', 'tiktok', 'x'], maxUploadMB: cfg.maxUploadMB,
   maxDurationMin: cfg.maxDurationMin, ttlMin: cfg.ttlMin,
 }));
 
-// --- Análise de link do YouTube (somente metadados oficiais) ---
-function parseYouTube(raw) {
-  let u; try { u = new URL(raw.trim()); } catch { return null; }
-  if (!['http:', 'https:'].includes(u.protocol)) return null;
-  const h = u.hostname.replace(/^(www|m|music)\./, '');
-  let id = null;
-  if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
-  else if (h === 'youtube.com') {
-    if (u.pathname === '/watch') id = u.searchParams.get('v');
-    else { const m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]{11})/); if (m) id = m[2]; }
-  }
-  return id && /^[\w-]{11}$/.test(id) ? id : null;
-}
-const isoDur = (s) => { const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s || ''); return m ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null; };
-
+// --- Análise de links das plataformas suportadas ---
 async function analyzeRemote(raw, res) {
   if (!ytdlpOk) throw httpErr(503, 'A importação por link ainda não foi configurada no servidor (yt-dlp).');
   const url = await validateImportUrl(raw, cfg.importHosts);
   const info = await ytdlpInfo(cfg.ytdlp, url);
-  if (info.duration && info.duration > cfg.maxDurationMin * 60) throw httpErr(413, `Duração acima do limite de ${cfg.maxDurationMin} minutos.`);
-  res.json({ kind: 'remote', url, title: info.title, channel: info.channel, thumbnail: info.thumbnail, duration: info.duration,
+  if (info.duration && info.duration > cfg.maxDurationMin * 60) {
+    throw httpErr(413, `Duração acima do limite de ${cfg.maxDurationMin} minutos.`);
+  }
+  const platform = detectPlatform(url);
+  const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', x: 'X', other: 'outra fonte' };
+  res.json({
+    kind: 'remote', platform, url, title: info.title, channel: info.channel,
+    thumbnail: info.thumbnail, duration: info.duration,
     warnings: info.duration == null ? ['Duração não informada pela fonte.'] : [],
-    availability: { downloadable: true, label: 'Disponível para importar',
-      reason: `Fonte permitida (${new URL(url).hostname}). Importe apenas conteúdo que você tem direito de usar.` } });
+    availability: {
+      downloadable: true,
+      label: 'Mídia acessível para importação',
+      reason: `Link reconhecido: ${platformNames[platform]}. O download depende de a mídia estar pública e acessível sem login ou proteção. Importe somente conteúdo que você tem direito de baixar.`
+    }
+  });
 }
 
 app.post('/api/analyze', async (req, res) => {
   clientId(req);
   const raw = String(req.body?.url || '');
-  if (!parseYouTube(raw)) return analyzeRemote(raw, res);
-  const id = parseYouTube(raw);
-  if (!id) throw httpErr(400, 'Esse não parece um link válido do YouTube.');
-  const out = { kind: 'youtube', videoId: id, title: '', channel: '', thumbnail: '', duration: null, warnings: [],
-    availability: { downloadable: false, label: 'Download direto indisponível',
-      reason: 'O YouTube não oferece uma API oficial para baixar vídeos, e o NekoTube não contorna proteções. Se o conteúdo é seu ou tem licença que permita, envie o arquivo original abaixo para converter.' } };
-  try {
-    if (cfg.ytKey) {
-      const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status&id=${id}&key=${encodeURIComponent(cfg.ytKey)}`, { signal: AbortSignal.timeout(8000) });
-      if (!r.ok) throw httpErr(502, 'A YouTube Data API recusou a consulta. Verifique a YOUTUBE_API_KEY.');
-      const it = (await r.json()).items?.[0];
-      if (!it) throw httpErr(404, 'Vídeo não encontrado, privado ou removido.');
-      out.title = it.snippet.title; out.channel = it.snippet.channelTitle;
-      out.thumbnail = it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url || '';
-      out.duration = isoDur(it.contentDetails?.duration);
-    } else {
-      const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}&format=json`, { signal: AbortSignal.timeout(8000) });
-      if (r.status === 404 || r.status === 401 || r.status === 403) throw httpErr(404, 'Vídeo indisponível, privado ou removido.');
-      if (!r.ok) throw httpErr(502, 'Não foi possível consultar o YouTube agora.');
-      const j = await r.json();
-      out.title = j.title; out.channel = j.author_name; out.thumbnail = j.thumbnail_url;
-      out.warnings.push('Duração indisponível: configure YOUTUBE_API_KEY no backend para exibi-la.');
-    }
-  } catch (e) {
-    if (e.status) throw e;
-    throw httpErr(504, 'Tempo esgotado ao consultar o YouTube. Tente novamente.');
-  }
-  res.json(out);
+  return analyzeRemote(raw, res);
 });
 
 // --- Upload + inspeção (ingest é compartilhado com a importação por link) ---
@@ -329,7 +300,7 @@ app.post('/api/imports/:id/cancel', (req, res) => {
 app.post('/api/convert', (req, res) => {
   const cid = clientId(req);
   if (!ffmpegOk) throw httpErr(503, 'FFmpeg não está configurado no servidor.');
-  if (jobs.size >= cfg.maxJobs) throw httpErr(429, 'Muitas conversões em andamento. Tente novamente em instantes.');
+  if (jobs.size + [...imports.values()].filter((i) => i.status === 'running').length >= cfg.maxJobs) throw httpErr(429, 'Muitas tarefas em andamento. Tente novamente em instantes.');
   const { uploadId, mode, format } = req.body || {};
   const up = db.prepare('SELECT * FROM uploads WHERE id=? AND client_id=?').get(String(uploadId), cid);
   if (!up || !fs.existsSync(up.path)) throw httpErr(404, 'Arquivo expirou. Envie-o novamente.');
@@ -376,7 +347,7 @@ app.post('/api/jobs/:id/cancel', (req, res) => {
 });
 
 app.get('/api/download/:id', (req, res) => {
-  const r = db.prepare('SELECT * FROM items WHERE id=?').get(String(req.params.id));
+  const r = db.prepare('SELECT * FROM items WHERE id=? AND client_id=?').get(String(req.params.id), clientId(req));
   if (!r || r.status !== 'done' || !r.file_path || !fs.existsSync(r.file_path))
     throw httpErr(404, 'Arquivo indisponível ou expirado.');
   res.download(r.file_path, `${r.name}.${r.format.toLowerCase()}`);
